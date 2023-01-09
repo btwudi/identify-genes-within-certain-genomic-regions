@@ -1,0 +1,33 @@
+library("GenomicRanges")
+
+# generate Granges object for genes
+gencode19 <- rtracklayer::import("/Users/wud8/Documents/GPS Lab/enhancer project/genome/gencode.v19.annotation_hg19.gtf")
+gencode19 = as.data.frame(gencode19)
+coding.gene = gencode19[gencode19$type =="gene" & gencode19$gene_type == "protein_coding",]
+
+genes = GRanges(seqnames = coding.gene$seqnames,
+                IRanges(start = as.numeric(coding.gene$start), end = as.numeric(coding.gene$start)),
+                strand = coding.gene$strand,
+                gene_id = coding.gene$gene_id,
+                gene_type = coding.gene$gene_type,
+                gene_name = coding.gene$gene_name)
+                
+# generate Granges object for differential expressed eRNAs       
+de = read.csv("/Users/wud8/Documents/GPS Lab/enhancer project/tcga558/eRNA15k_diff_exp_tcga514.csv")
+dif.eRNA15k = de[de$q_value < 0.05 & abs(de$fold_change) >= 1,]
+eRNA.loc = as.data.frame(t(sapply(1:nrow(dif.eRNA15k), function(i) unlist(strsplit(dif.eRNA15k$X[i], "_")))))
+colnames(eRNA.loc) = cbind("chr", "start", "end")
+
+signal = GRanges(seqnames = eRNA.loc$chr,IRanges(start=as.numeric(eRNA.loc$start),end=as.numeric(eRNA.loc$end)))
+
+# find the nearest genes for each diff eRNAs
+hits = distanceToNearest(signal, genes, select = "all")
+hits = data.frame(hits)
+
+ind.hits_eRNA = hits$queryHits
+hits$eRNA = dif.eRNA15k$X[ind.hits_eRNA]
+
+ind.hits_genes = hits$subjectHits
+hits$gene = coding.gene$gene_name[ind.hits_genes]
+
+saveRDS(hits, "/Users/wud8/Documents/GPS Lab/enhancer project/tcga558/eRNA15k_nearest_gene_tcga514.rds")
