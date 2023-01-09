@@ -1,0 +1,47 @@
+eRNA_gene_pairs <- function(eRNA.file, tcga.data.list, q_cutoff)
+{
+        library(Homo.sapiens)
+        genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
+        library(dplyr)
+        
+        temp <- read.csv(eRNA.file)
+        # temp = temp[temp$q_value < q_cutoff & abs(temp$fold_change) >= 1, ] 
+        eRNA_info <- temp$eRNA
+        
+        tcga.data <- readRDS(tcga.data.list)
+        
+        en <- unlist((sapply(1:length(eRNA_info), function(i) length(unlist(strsplit(eRNA_info[i], "_"))))))
+        ind = (en == 3)
+        en <- eRNA_info[ind]
+        loc <- as.data.frame(t(sapply(1:length(en), function(i) unlist(strsplit(en[i], "_")))))
+        
+        loc[,1] <- gsub("chr","",as.character(loc[,1]))
+        loc <- cbind(loc, as.numeric(loc[,2])-1000000)
+        loc[which(loc[,4] <0),4] = 0
+        loc <- cbind(loc, as.numeric(loc[,3])+1000000)
+        colnames(loc) <- c("chr", "start", "end", "new_start", "new_end")
+        
+        geneSYMBOL <- as.data.frame(org.Hs.egSYMBOL)
+        eRNA_gene = NULL
+        for(i in seq_len(nrow(loc))) {
+                mycoords.list <- as.list(paste(loc[i,1],loc[i,4],loc[i,5], sep = ":"))
+                mycoords.gr = lapply(mycoords.list, function (x) {res=strsplit(x, ':')}) %>%
+                        unlist %>%
+                        matrix(ncol=3, byrow=T) %>%
+                        as.data.frame %>%
+                        select(chrom=V1, start=V2, end=V3) %>%
+                        mutate(chrom=paste0('chr', chrom)) %>%
+                        makeGRangesFromDataFrame
+                gene_list <- subsetByOverlaps(genes(TxDb.Hsapiens.UCSC.hg19.knownGene), mycoords.gr)
+                names_of_genes <- as.data.frame(names(gene_list))
+                overlapped_id <- merge(geneSYMBOL, names_of_genes, by.x='gene_id', by.y='names(gene_list)')
+                index.gene = match(overlapped_id[,2], rownames(tcga.data[[2]]));
+                index.gene = index.gene[!is.na(index.gene)];
+                if(length(index.gene) == 0)
+                        next;
+                eRNA_gene = rbind(eRNA_gene, cbind(rep(eRNA_info[i], length(index.gene)), rownames(tcga.data[[2]])[index.gene]));
+                print(i)
+        }
+        return(eRNA_gene)
+}
+
